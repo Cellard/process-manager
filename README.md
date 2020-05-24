@@ -74,5 +74,6 @@ Even if your task running for hours — manager will watch it activity.
 ```php
 ProcessManager::get('converter')
     // Define custom dir to store lock files
+    // System tmp dir used by default
     ->dir('/var/lock');
 ```
