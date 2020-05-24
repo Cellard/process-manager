@@ -13,7 +13,7 @@ class ProcessManager
      * Process class, e.g. `converter`
      * @var string
      */
-    protected $domain;
+    protected $queue;
     /**
      * Process subject, e.g. `video.mp4`
      * @var string
@@ -28,9 +28,9 @@ class ProcessManager
 
     protected $pid;
 
-    public function __construct($domain)
+    public function __construct($queue)
     {
-        $this->domain = $domain;
+        $this->queue = $queue;
         $this->maxThreads = 1;
         $this->subject = null;
         $this->dir = sys_get_temp_dir();
@@ -43,13 +43,13 @@ class ProcessManager
 
     /**
      * Get instance
-     * @param string $domain
+     * @param string $queue
      * @return static
      * @throws ProcessManagerException
      */
-    public static function get($domain)
+    public static function queue($queue)
     {
-        return new static($domain);
+        return new static($queue);
     }
 
     /**
@@ -75,7 +75,7 @@ class ProcessManager
     }
 
     /**
-     * Define directory to keep lock files
+     * Redefine directory to keep lock files
      * @param string $dir
      * @return static
      */
@@ -108,6 +108,8 @@ class ProcessManager
      */
     public function lock(callable $body = null)
     {
+        $this->cleanup();
+
         if ($this->lockThread()) {
             if ($this->lockProcess()) {
 
@@ -143,14 +145,19 @@ class ProcessManager
         });
     }
 
-    public function threadLockFile()
+    protected function threadLockFile()
     {
-        return $this->dir . "/pm-{$this->domain}.loc";
+        return $this->dir . "/pm-{$this->queue}.loc";
     }
 
-    public function processLockFile()
+    protected function processLockFile()
     {
-        return $this->dir . "/pm-{$this->domain}-{$this->subject}.loc";
+        return $this->dir . "/pm-{$this->queue}-{$this->subject}.loc";
+    }
+
+    protected function processLockFileMask()
+    {
+        return $this->dir . "/pm-{$this->queue}-*.loc";
     }
 
     /**
@@ -245,11 +252,23 @@ class ProcessManager
     }
 
     /**
-     * Release process
+     * Release lock
      */
     public function release()
     {
         $this->releaseProcess();
         $this->releaseThread();
+    }
+
+    protected function cleanup()
+    {
+        // Find and remove all subject lock files with dead processes
+        $mask = $this->processLockFileMask();
+        foreach (glob($mask) as $filename) {
+            $pid = file_get_contents($filename);
+            if (!$this->processExists($pid)) {
+                unlink($filename);
+            }
+        }
     }
 }
