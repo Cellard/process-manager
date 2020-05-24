@@ -1,6 +1,7 @@
 {
     "name": "cellard/process-manager",
     "description": "Manage cron task multi-threading",
+    "keywords": ["cron", "threads", "multi-threading"],
     "version": "0.1",
     "license": "MIT",
     "type": "library",
