@@ -167,10 +167,17 @@ class ProcessManager
             return [];
         }
 
+        // trim crlf
+        $pids = array_map(function($pid) {
+            return (integer)$pid;
+        }, $pids);
+
         // Keep only active
-        return array_filter($pids, function ($pid) {
-            return $this->processExists($pid);
+        $pids = array_filter($pids, function ($pid) {
+            return $pid && $this->processExists($pid);
         });
+
+        return $pids;
     }
 
     protected function threadLockFile()
@@ -205,7 +212,7 @@ class ProcessManager
 
         if ($threadsRunning < $this->maxThreads) {
             $pids[] = $this->pid;
-            return (boolean)file_put_contents($this->threadLockFile(), implode("\n", $pids));
+            return (boolean)file_put_contents($this->threadLockFile(), implode("\n", array_filter($pids)));
         }
 
         return false;
@@ -273,7 +280,7 @@ class ProcessManager
         if ($this->subject) {
             $tmp = $this->subjectLockFile();
 
-            if (file_exists($tmp)) {
+            if (file_exists($tmp) && ($pid = file_get_contents($tmp)) && ($pid == $this->pid)) {
                 unlink($tmp);
             }
         }
