@@ -1,28 +1,47 @@
 # [Cron] Process Manager
 
+Manager allows you to control cron task threads.
+
+```
+#crontab
+* * * * * php example.php
+* * * * * php converter.php
+```
+
 Only one instance of cron task is allowed. Next one will be rejected if previous still running.
 
+_example.php_
+
 ```php
-$pm = ProcessManager::get('converter');
+$pm = ProcessManager::get('example');
 
 if ($pm->lock()) {
     // Do your job
  
     $pm->release();   
+} else {
+    // All threads are engaged
 }
 ```
 
-Closure style.
+## Closure style
+
 Two instances of cron task may run simultaneously.
 
+_converter.php_
+
 ```php
-ProcessManager::get('converter')
+$lock = ProcessManager::get('converter')
     ->threads(2)
     ->lock(function(ProcessManager $pm) {
         // Do your job
     
         // Autorelease
     });
+
+if ( ! $lock) {
+    // All threads are engaged
+}
 ```
 
 ## Subject
