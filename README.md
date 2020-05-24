@@ -66,8 +66,8 @@ foreach ($filesToConvert as $filename) {
     ProcessManager::queue('converter')
         ->threads(2)
         ->subject($filename)
-        ->lock(function(ProcessManager $pm) {
-            // Do your job
+        ->lock(function(ProcessManager $pm) use ($filename) {
+            // Convert $filename
         });
 }
 ```
