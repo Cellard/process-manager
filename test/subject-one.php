@@ -1,9 +1,11 @@
 <?php
-/** @var \Cellard\ProcessManager\ProcessManager $pm */
-$pm = require 'pm.php';
+require __DIR__ . '/../vendor/autoload.php';
+
+$pm = \Cellard\ProcessManager\ProcessManager::queue('test/subject.php')
+    ->dir(__DIR__ . '/loc');
 
 $lock = $pm
-    ->subject('one')
+    ->subject('one+/.subject')
     ->threads(2)
     ->lock(function (\Cellard\ProcessManager\ProcessManager $pm) {
         $threads = count($pm->activeThreads());

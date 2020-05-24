@@ -1,7 +1,10 @@
 <?php
-$pm = require 'pm.php';
+require __DIR__ . '/../vendor/autoload.php';
 
-$lock = $pm->lock(function($pm) {
+$pm = \Cellard\ProcessManager\ProcessManager::queue('one-thread.php')
+    ->dir(__DIR__ . '/loc');
+
+$lock = $pm->lock(function ($pm) {
     echo "Script will die in 60 seconds\n";
     sleep(60);
 });

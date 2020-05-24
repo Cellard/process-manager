@@ -3,6 +3,9 @@
 
 namespace Cellard\ProcessManager;
 
+
+use mozartk\ProcessFinder\ProcessFinder;
+
 /**
  * Manages processes. Control threads and process state using process id
  * @package Cellard\ProcessManager
@@ -30,7 +33,7 @@ class ProcessManager
 
     public function __construct($queue)
     {
-        $this->queue = $queue;
+        $this->queue = $this->sanitizeFilename($queue);
         $this->maxThreads = 1;
         $this->subject = null;
         $this->dir = sys_get_temp_dir();
@@ -70,7 +73,7 @@ class ProcessManager
      */
     public function subject($subject)
     {
-        $this->subject = $subject;
+        $this->subject = $this->sanitizeFilename($subject);
         return $this;
     }
 
@@ -99,6 +102,28 @@ class ProcessManager
     {
         $this->pid = $pid;
         return $this;
+    }
+
+    protected function sanitizeFilename($string)
+    {
+        // sanitize filename
+        $string = preg_replace(
+            '~
+        [<>:"/\\|?*]|            # file system reserved https://en.wikipedia.org/wiki/Filename#Reserved_characters_and_words
+        [\x00-\x1F]|             # control characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247%28v=vs.85%29.aspx
+        [\x7F\xA0\xAD]|          # non-printing characters DEL, NO-BREAK SPACE, SOFT HYPHEN
+        [#\[\]@!$&\'()+,;=]|     # URI reserved https://tools.ietf.org/html/rfc3986#section-2.2
+        [{}^\~`]                 # URL unsafe characters https://www.ietf.org/rfc/rfc1738.txt
+        ~x',
+            '-', $string);
+        // avoids ".", ".." or ".hiddenFiles"
+        $string = ltrim($string, '.-');
+        // optional beautification
+        //if ($beautify) $filename = beautify_filename($string);
+        // maximize filename length to 255 bytes http://serverfault.com/a/9548/44086
+        $ext = pathinfo($string, PATHINFO_EXTENSION);
+        $string = mb_strcut(pathinfo($string, PATHINFO_FILENAME), 0, 100 - ($ext ? strlen($ext) + 1 : 0), mb_detect_encoding($string)) . ($ext ? '.' . $ext : '');
+        return $string;
     }
 
     /**
@@ -208,8 +233,8 @@ class ProcessManager
      */
     public function processExists($pid)
     {
-        // TODO Now it supports only *nix systems
-        return (integer)$pid && (boolean)exec("ps ahxwwo pid | grep {$pid}");
+        $processHandler = new ProcessFinder();
+        return $processHandler->isRunning($pid);
     }
 
     /**
