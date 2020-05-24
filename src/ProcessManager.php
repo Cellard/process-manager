@@ -77,6 +77,7 @@ class ProcessManager
     /**
      * Define directory to keep lock files
      * @param string $dir
+     * @return static
      */
     public function dir($dir)
     {
@@ -84,20 +85,25 @@ class ProcessManager
         if (!file_exists($dir)) {
             mkdir($dir, 0777, true);
         }
+        return $this;
     }
 
     /**
      * Set process ID (testing purposes)
      * @param integer $pid
+     * @return static
+     * @deprecated
+     * @internal
      */
     public function pid($pid)
     {
         $this->pid = $pid;
+        return $this;
     }
 
     /**
      * Try to lock process
-     * @param callable $body function(ProcessManager $pm) autorelease
+     * @param callable $body function(ProcessManager $pm) with autorelease
      * @return bool
      */
     public function lock(callable $body = null)
@@ -120,7 +126,7 @@ class ProcessManager
     }
 
     /**
-     * Get number of active threads
+     * Get listing of active threads
      * @return integer[]|array
      */
     public function activeThreads()
@@ -132,7 +138,7 @@ class ProcessManager
         }
 
         // Keep only active
-        return array_filter($pids, function($pid) {
+        return array_filter($pids, function ($pid) {
             return $this->processExists($pid);
         });
     }
@@ -174,22 +180,17 @@ class ProcessManager
     {
         $tmp = $this->threadLockFile();
 
-        if (file_exists($tmp)) {
+        $pids = $this->activeThreads();
 
-            if (!($pids = file($tmp))) {
-                return false;
-            }
+        // Remove our pid from list
+        $pids = array_filter($pids, function ($pid) {
+            return $pid && $pid != $this->pid;
+        });
 
-            // Remove our pid from list
-            $pids = array_filter($pids, function($pid) {
-                return $pid && $pid != $this->pid;
-            });
-
-            if ($pids) {
-                file_put_contents($tmp, implode("\n", $pids));
-            } else {
-                unlink($tmp);
-            }
+        if ($pids) {
+            file_put_contents($tmp, implode("\n", $pids));
+        } elseif (file_exists($tmp)) {
+            unlink($tmp);
         }
     }
 
@@ -200,6 +201,7 @@ class ProcessManager
      */
     public function processExists($pid)
     {
+        // TODO Now it supports only *nix systems
         return (integer)$pid && (boolean)exec("ps ahxwwo pid | grep {$pid}");
     }
 
@@ -220,12 +222,13 @@ class ProcessManager
             $pid = file_get_contents($tmp);
 
             if (!$this->processExists($pid)) {
-                // snatch lock
+                // snatch lock!
                 return (boolean)file_put_contents($tmp, $this->pid);
             }
 
             return false;
         } else {
+            // Neutral answer
             return true;
         }
     }
