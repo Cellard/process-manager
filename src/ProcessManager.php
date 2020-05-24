@@ -73,6 +73,9 @@ class ProcessManager
      */
     public function subject($subject)
     {
+        // Release previous subject
+        $this->releaseSubject();
+
         $this->subject = $this->sanitizeFilename($subject);
         return $this;
     }
@@ -136,7 +139,7 @@ class ProcessManager
         $this->cleanup();
 
         if ($this->lockThread()) {
-            if ($this->lockProcess()) {
+            if ($this->lockSubject()) {
 
                 if ($body) {
                     // Closure style
@@ -175,12 +178,12 @@ class ProcessManager
         return $this->dir . "/pm-{$this->queue}.loc";
     }
 
-    protected function processLockFile()
+    protected function subjectLockFile()
     {
         return $this->dir . "/pm-{$this->queue}-{$this->subject}.loc";
     }
 
-    protected function processLockFileMask()
+    protected function subjectLockFileMask()
     {
         return $this->dir . "/pm-{$this->queue}-*.loc";
     }
@@ -194,8 +197,8 @@ class ProcessManager
         $pids = $this->activeThreads();
 
         if (in_array($this->pid, $pids)) {
-            // one process may not engage few threads
-            return false;
+            // already engaged (in case of changing subject)
+            return true;
         }
 
         $threadsRunning = count($pids);
@@ -241,11 +244,11 @@ class ProcessManager
      * Tries to lock process
      * @return bool
      */
-    protected function lockProcess()
+    protected function lockSubject()
     {
         if ($this->subject) {
 
-            $tmp = $this->processLockFile();
+            $tmp = $this->subjectLockFile();
 
             if (!file_exists($tmp)) {
                 return (boolean)file_put_contents($tmp, $this->pid);
@@ -265,10 +268,10 @@ class ProcessManager
         }
     }
 
-    protected function releaseProcess()
+    protected function releaseSubject()
     {
         if ($this->subject) {
-            $tmp = $this->processLockFile();
+            $tmp = $this->subjectLockFile();
 
             if (file_exists($tmp)) {
                 unlink($tmp);
@@ -281,14 +284,14 @@ class ProcessManager
      */
     public function release()
     {
-        $this->releaseProcess();
+        $this->releaseSubject();
         $this->releaseThread();
     }
 
     protected function cleanup()
     {
         // Find and remove all subject lock files with dead processes
-        $mask = $this->processLockFileMask();
+        $mask = $this->subjectLockFileMask();
         foreach (glob($mask) as $filename) {
             $pid = file_get_contents($filename);
             if (!$this->processExists($pid)) {
