@@ -56,18 +56,35 @@ When working with queue, we need to control each task will be executed just once
 
 We may define process subject with task number (or something like that).
 
-In this example there will be one process to convert `video.mp4` and another process to convert `audio.mp3` file.
-No matter how many times you will execute this script — every file will be converted just once.
+In this example there will be maximum two processes, and each file will be converted just once.
 
 ```php
-$filesToConvert = ['video.mp4', 'audio.mp3'];
+$pm = ProcessManager::queue('converter')
+    ->threads(2);
 
-foreach ($filesToConvert as $filename) {
+if (!$pm->lock()) {
+    exit('Too many threads');
+}
+
+while (FilesToConvert::getOne() as $filename) {
+    if (!$pm->subject($filename)->lock()) {
+        // file is converting now by other thread
+        continue;
+    }
+    
+    // Your code to convert file here
+}
+```
+
+This example may be shortened.
+
+```php
+while (FilesToConvert::getOne() as $filename) {
     ProcessManager::queue('converter')
         ->threads(2)
         ->subject($filename)
-        ->lock(function(ProcessManager $pm) use ($filename) {
-            // Convert $filename
+        ->lock(ProcessManager $pm) use ($filename) {
+            // Your code to convert file here
         });
 }
 ```
@@ -79,7 +96,7 @@ Process Manager keep locks in temp files.
 Lock file stores process id. Project Manager watches if process is alive
 and automatically release lock if process disappears. 
 
-Even if your task running for hours — manager will watch it activity.
+Even if your task running for hours — manager will watch it activity. 
 
 ### Locks folder
 
