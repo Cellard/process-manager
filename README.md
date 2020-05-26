@@ -104,15 +104,21 @@ Even if your task running for hours — manager will watch it activity.
 
 Used by default. Manager keeps lock files in system temp directory, but you may redefine it.
 
-    ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\FilesystemDriver(/* optional */ $loc_dir);
+```php
+ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\FilesystemDriver(/* optional */ $loc_dir);
+```
 
 #### Redis
 
-    ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\RedisDriver(/* optional */ $predis_config);
+```php
+ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\RedisDriver(/* optional */ $predis_config);
+```
 
 ### Namespaces
 
 As manager store locks in Filesystem or in Redis keys, it is possible that different projects will use the same names.
 To prevent conflicts it is recommended to redefine manager's prefix.
 
-    ProcessManager::$prefix = 'your-project-name';
+```php
+ProcessManager::$prefix = 'your-project-name';
+```
