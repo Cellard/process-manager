@@ -91,10 +91,8 @@ while (FilesToConvert::getOne() as $filename) {
 
 ## How it works
 
-Process Manager keep locks in temp files.
-
-Lock file stores process id. Project Manager watches if process is alive
-and automatically release lock if process disappears. 
+Process Manager keeps locks with process id.
+It watches if process is alive and automatically releases lock if process disappears. 
 
 Even if your task running for hours — manager will watch it activity. 
 
