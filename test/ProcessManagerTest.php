@@ -9,35 +9,94 @@ class ProcessManagerTest extends TestCase
 
     protected $pm;
 
+    /**
+     * Run thread
+     * @param $sleep
+     * @param $queue
+     * @param int $threads
+     * @param string $subject
+     * @return integer process id
+     */
+    protected function execExternal($threads = 1, $subject = '', $sleep = 4, $queue = 'unit-test')
+    {
+        $cmd = 'php ' . __DIR__ . "/thread.php {$sleep} {$queue} {$threads} {$subject}";
+        $outputfile = __DIR__ . "/output.txt";
+        $pidfile = __DIR__ . "/pid.txt";
+
+        exec(sprintf("%s > %s 2>&1 & echo $! > %s", $cmd, $outputfile, $pidfile));
+
+        sleep (1); // Wait for $outputfile
+        //echo "Run external process " . file_get_contents($pidfile) . "\n";
+
+        $pid = trim(file_get_contents($outputfile));
+
+        return $pid;
+    }
+    
     protected function setUp(): void
     {
         parent::setUp();
 
-        ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\FilesystemDriver();
         $this->pm = ProcessManager::queue('unit-test');
     }
 
+    protected function waitForRelease()
+    {
+        while ($this->pm->threads()) {
+            sleep(1);
+        }
+        echo "All locks released\n";
+    }
+
+    /**
+     * Assert pid get lock and running
+     * @param $pid
+     */
+    protected function assertExternal($pid)
+    {
+        $this->assertGreaterThan(0, $pid, "External thread failed to lock");
+        $this->assertTrue($this->pm->processExists($pid), "Process {$pid} not exists");
+        $this->assertTrue(in_array($pid, $this->pm->threads()), "Process {$pid} is not in thread list");
+    }
+
+    protected function assertExternalFailed($pid)
+    {
+        $this->assertEquals(0, $pid);
+    }
+
+    /**
+     * Test external thread executor works
+     */
+    public function testExec()
+    {
+        echo "---\n";
+        echo "Test running external thread\n";
+
+        $pid = $this->execExternal();
+        $this->assertExternal($pid);
+        $this->assertThreads(1);
+
+        echo "External thread exists\n";
+        $this->waitForRelease();
+    }
+
+    /**
+     * Test single thread lock without subject
+     */
     public function testLock()
     {
-        // Allowed
-        $this->assertTrue($this->pm->lock());
-        // Still allowed as pid was not changed
-        $this->assertTrue($this->pm->lock());
+        echo "---\n";
+        echo "Test locking too many threads\n";
 
-        // Denied, as we have one thread limit
-        $this->pm->pid(getmypid() * rand(10, 20));
-        $this->assertFalse($this->pm->lock());
+        $this->assertExternal($this->execExternal());
+        $this->assertThreads(1);
 
-        // Allowed, as we increase limit
-        $this->pm->threads(2);
-        $this->assertTrue($this->pm->lock());
-        $this->pm->release();
+        $this->assertExternalFailed($this->execExternal());
+        $this->assertThreads(1);
 
-        $this->pm->pid(getmypid());
-        $this->pm->release();
+        echo "Second thread could not get lock\n";
 
-        // After all releases there should not be any locks
-        $this->assertEquals(0, count($this->pm->threads()));
+        $this->waitForRelease();
     }
 
     public function testProcessExists()
@@ -49,110 +108,83 @@ class ProcessManagerTest extends TestCase
         $this->assertFalse($this->pm->processExists(getmypid() * rand(10, 20)));
     }
 
-    public function testThreads()
+    /**
+     * Assert number of locked threads
+     * @param $count
+     */
+    protected function assertThreads($count)
     {
-        // Check response structure
         $this->assertIsArray($this->pm->threads());
-        $this->assertEquals(0, count($this->pm->threads()));
+        $this->assertEquals($count, count($this->pm->threads()));
+    }
 
-        // One lock
-        $this->pm->lock();
-        // No matter how any times one process ask for lock
-        $this->pm->lock();
-        $this->assertEquals(1, count($this->pm->threads()));
-        $this->assertTrue(in_array(getmypid(), $this->pm->threads()));
+    /**
+     * Test few threads locking without subject
+     */
+    public function testLockThreads()
+    {
+        echo "---\n";
+        echo "Test working with few treads\n";
 
-        $this->pm->release();
-        $this->assertEquals(0, count($this->pm->threads()));
+        // Check response structure
+        $this->assertThreads(0);
 
         // Few locks
-        $this->pm->threads(2);
-        $this->pm->lock();
-        $this->pm->pid(getmypid() * rand(10, 20));
-        $this->pm->lock();
-        // Still should be just 1 active process (as fake process will be filtered out)
-        $this->assertEquals(1, count($this->pm->threads()));
+        echo "Locking first thread\n";
+        $pid = $this->execExternal(2);
+        $this->assertExternal($pid);
+        $this->assertThreads(1);
 
-        $this->pm->pid(getmypid());
-        $this->pm->release();
+        echo "Locking second thread\n";
+        $pid = $this->execExternal(2);
+        $this->assertExternal($pid);
+        $this->assertThreads(2);
 
-        // After all releases there should not be any locked threads
-        $this->assertEquals(0, count($this->pm->threads()));
+        echo "Third thread could not get lock\n";
+        $pid = $this->execExternal(2);
+        $this->assertExternalFailed($pid);
+        $this->assertThreads(2);
+
+        $this->waitForRelease();
     }
 
     public function testLockWithSubjects()
     {
-        $subject = 'thread-subject';
+        echo "---\n";
+        echo "Test working with subjects\n";
 
-        $this->pm->subject($subject);
+        echo "Locking single thread with subject\n";
+        $pid = $this->execExternal(1, 'subject-1');
+        $this->assertExternal($pid);
 
-        // Allowed
-        $this->assertTrue($this->pm->lock());
-        // Still allowed as pid was not changed
-        $this->assertTrue($this->pm->lock());
+        echo "Second thread with such subject could not get lock\n";
+        $pid = $this->execExternal(1, 'subject-1');
+        $this->assertExternalFailed($pid);
 
-        // Denied, as subject is locked
-        $this->pm->pid(getmypid() * rand(10, 20));
-        $this->assertFalse($this->pm->lock());
+        echo "Second thread with different subject could not get lock\n";
+        $pid = $this->execExternal(1, 'subject-2');
+        $this->assertExternalFailed($pid);
 
-        $this->pm->pid(getmypid());
-        $this->pm->release();
+        $this->waitForRelease();
 
-        // Allowed, as subject was released
-        $this->pm->pid(getmypid() * rand(10, 20));
-        $this->assertTrue($this->pm->lock());
-        $this->pm->release();
+        echo "Locking first thread with subject\n";
+        $pid = $this->execExternal(2, 'subject-1');
+        $this->assertExternal($pid);
+        $this->assertThreads(1);
 
-        // After all releases there should not be any locks
-        $this->assertEquals(0, count($this->pm->threads()));
+        echo "Subject can not be locked\n";
+        $pid = $this->execExternal(2, 'subject-1');
+        $this->assertExternalFailed($pid);
 
-    }
+        echo "Locking second thread with different subject\n";
+        $pid = $this->execExternal(2, 'subject-2');
+        $this->assertExternal($pid);
+        $this->assertThreads(2);
 
-    public function testSubject()
-    {
-        $subject1 = 'thread-subject-1';
-        $subject2 = 'thread-subject-2';
-        $fake = getmypid() * rand(10, 20);
+        echo "No more threads could get lock\n";
+        $pid = $this->execExternal(2, 'subject-3');
+        $this->assertExternalFailed($pid);
 
-        // We need few threads to test subject switching
-        $this->pm->threads(2);
-
-        $this->pm->subject($subject1);
-
-        // Allowed
-        $this->assertTrue($this->pm->lock());
-
-        // Then changing subject, it releases previous subject
-        $this->pm->subject($subject2);
-
-        $this->pm->subject($subject1);
-        $this->pm->pid($fake);
-
-        // Allowed, as subject1 was released
-        $this->assertTrue($this->pm->lock());
-
-        $this->pm->pid(getmypid());
-        // Still allowed, as fake pid was ignored
-        $this->assertTrue($this->pm->lock());
-
-        // As we change pid, so changing to subject2 will not release subject1
-        $this->pm->pid($fake);
-        $this->pm->subject($subject2);
-        $this->pm->pid(getmypid());
-        // Now both subjects locked for real pid
-        $this->assertTrue($this->pm->lock());
-
-        // Denied
-        $this->pm->pid($fake);
-        $this->assertFalse($this->pm->lock());
-
-        // Release all subjects and thread
-        $this->pm->pid(getmypid());
-        $this->pm->subject($subject1);
-        $this->pm->release();
-        $this->pm->subject($subject2);
-        $this->pm->release();
-
-        $this->assertEquals(0, count($this->pm->threads()));
+        $this->waitForRelease();
     }
 }
