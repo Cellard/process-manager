@@ -26,11 +26,8 @@ class ProcessManagerTest extends TestCase
         exec(sprintf("%s > %s 2>&1 & echo $! > %s", $cmd, $outputfile, $pidfile));
 
         sleep (1); // Wait for $outputfile
-        //echo "Run external process " . file_get_contents($pidfile) . "\n";
 
-        $pid = trim(file_get_contents($outputfile));
-
-        return $pid;
+        return trim(file_get_contents($outputfile));
     }
     
     protected function setUp(): void
@@ -45,7 +42,6 @@ class ProcessManagerTest extends TestCase
         while ($this->pm->threads()) {
             sleep(1);
         }
-        echo "All locks released\n";
     }
 
     /**
@@ -65,36 +61,22 @@ class ProcessManagerTest extends TestCase
     }
 
     /**
+     * Assert number of locked threads
+     * @param $count
+     */
+    protected function assertThreads($count)
+    {
+        $this->assertIsArray($this->pm->threads());
+        $this->assertEquals($count, count($this->pm->threads()));
+    }
+
+    /**
      * Test external thread executor works
      */
     public function testExec()
     {
-        echo "---\n";
-        echo "Test running external thread\n";
-
         $pid = $this->execExternal();
         $this->assertExternal($pid);
-        $this->assertThreads(1);
-
-        echo "External thread exists\n";
-        $this->waitForRelease();
-    }
-
-    /**
-     * Test single thread lock without subject
-     */
-    public function testLock()
-    {
-        echo "---\n";
-        echo "Test locking too many threads\n";
-
-        $this->assertExternal($this->execExternal());
-        $this->assertThreads(1);
-
-        $this->assertExternalFailed($this->execExternal());
-        $this->assertThreads(1);
-
-        echo "Second thread could not get lock\n";
 
         $this->waitForRelease();
     }
@@ -109,38 +91,36 @@ class ProcessManagerTest extends TestCase
     }
 
     /**
-     * Assert number of locked threads
-     * @param $count
+     * Test single thread lock without subject
      */
-    protected function assertThreads($count)
+    public function testLockOneThread()
     {
-        $this->assertIsArray($this->pm->threads());
-        $this->assertEquals($count, count($this->pm->threads()));
+        $this->assertThreads(0);
+
+        $this->assertExternal($this->execExternal());
+        $this->assertThreads(1);
+
+        $this->assertExternalFailed($this->execExternal());
+        $this->assertThreads(1);
+
+        $this->waitForRelease();
     }
 
     /**
      * Test few threads locking without subject
      */
-    public function testLockThreads()
+    public function testLockFewThreads()
     {
-        echo "---\n";
-        echo "Test working with few treads\n";
-
-        // Check response structure
         $this->assertThreads(0);
 
-        // Few locks
-        echo "Locking first thread\n";
         $pid = $this->execExternal(2);
         $this->assertExternal($pid);
         $this->assertThreads(1);
 
-        echo "Locking second thread\n";
         $pid = $this->execExternal(2);
         $this->assertExternal($pid);
         $this->assertThreads(2);
 
-        echo "Third thread could not get lock\n";
         $pid = $this->execExternal(2);
         $this->assertExternalFailed($pid);
         $this->assertThreads(2);
@@ -148,42 +128,48 @@ class ProcessManagerTest extends TestCase
         $this->waitForRelease();
     }
 
-    public function testLockWithSubjects()
+    public function testLockOneThreadWithSubject()
     {
-        echo "---\n";
-        echo "Test working with subjects\n";
+        $this->assertThreads(0);
 
-        echo "Locking single thread with subject\n";
-        $pid = $this->execExternal(1, 'subject-1');
-        $this->assertExternal($pid);
-
-        echo "Second thread with such subject could not get lock\n";
-        $pid = $this->execExternal(1, 'subject-1');
-        $this->assertExternalFailed($pid);
-
-        echo "Second thread with different subject could not get lock\n";
-        $pid = $this->execExternal(1, 'subject-2');
-        $this->assertExternalFailed($pid);
-
-        $this->waitForRelease();
-
-        echo "Locking first thread with subject\n";
-        $pid = $this->execExternal(2, 'subject-1');
+        $pid = $this->execExternal(1, 'subject', 5);
         $this->assertExternal($pid);
         $this->assertThreads(1);
 
-        echo "Subject can not be locked\n";
-        $pid = $this->execExternal(2, 'subject-1');
+        $pid = $this->execExternal(1, 'subject', 5);
         $this->assertExternalFailed($pid);
+        $this->assertThreads(1);
 
-        echo "Locking second thread with different subject\n";
-        $pid = $this->execExternal(2, 'subject-2');
+        $pid = $this->execExternal(1, 'next-subject', 5);
+        $this->assertExternalFailed($pid);
+        $this->assertThreads(1);
+
+        $this->waitForRelease();
+    }
+
+    public function testLockFewThreadsWithSubject()
+    {
+        $this->assertThreads(0);
+
+        $pid = $this->execExternal(2, 'subject-one', 7);
+        $this->assertExternal($pid);
+        $this->assertThreads(1);
+
+        $pid = $this->execExternal(2, 'subject-one', 7);
+        $this->assertExternalFailed($pid);
+        $this->assertThreads(1);
+
+        $pid = $this->execExternal(2, 'subject-two', 7);
         $this->assertExternal($pid);
         $this->assertThreads(2);
 
-        echo "No more threads could get lock\n";
-        $pid = $this->execExternal(2, 'subject-3');
+        $pid = $this->execExternal(2, 'subject-two', 7);
         $this->assertExternalFailed($pid);
+        $this->assertThreads(2);
+
+        $pid = $this->execExternal(2, 'subject-tree', 7);
+        $this->assertExternalFailed($pid);
+        $this->assertThreads(2);
 
         $this->waitForRelease();
     }
