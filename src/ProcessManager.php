@@ -4,6 +4,8 @@
 namespace Cellard\ProcessManager;
 
 
+use Cellard\ProcessManager\Drivers\FilesystemDriver;
+use Cellard\ProcessManager\Drivers\ProcessManagerDriverInterface;
 use mozartk\ProcessFinder\ProcessFinder;
 
 /**
@@ -33,7 +35,7 @@ class ProcessManager
 
     public function __construct($queue)
     {
-        $this->queue = $this->sanitizeFilename($queue);
+        $this->queue = $queue;
         $this->maxThreads = 1;
         $this->subject = null;
         $this->dir = sys_get_temp_dir();
@@ -42,6 +44,24 @@ class ProcessManager
         if (!$this->processExists($this->pid)) {
             throw new ProcessManagerException("Can't resolve process list");
         }
+    }
+
+    public static $prefix = 'proc-man';
+    /**
+     * Uses FilesystemDriver by default
+     * @var ProcessManagerDriverInterface
+     */
+    public static $driver;
+
+    /**
+     * @return ProcessManagerDriverInterface
+     */
+    protected function driver()
+    {
+        if (!self::$driver) {
+            self::$driver = new FilesystemDriver();
+        }
+        return self::$driver;
     }
 
     /**
@@ -56,77 +76,59 @@ class ProcessManager
     }
 
     /**
-     * Set number of threads
-     * @param integer $threads
-     * @return static
+     * Set (or get) number (or list) of maximum (or running) threads
+     * @param integer|null $threads
+     * @return static|integer[]|array
      */
-    public function threads($threads)
+    public function threads($threads = null)
     {
-        $this->maxThreads = $threads;
-        return $this;
-    }
+        if (is_null($threads)) {
 
-    /**
-     * Define subject
-     * @param $subject
-     * @return static
-     */
-    public function subject($subject)
-    {
-        // Release previous subject
-        $this->releaseSubject();
+            $pids = $this->driver()->getThreads($this->queue);
 
-        $this->subject = $this->sanitizeFilename($subject);
-        return $this;
-    }
+            // Keep only active
+            $pids = array_filter($pids, function ($pid) {
+                return $pid && $this->processExists($pid);
+            });
 
-    /**
-     * Redefine directory to keep lock files
-     * @param string $dir
-     * @return static
-     */
-    public function dir($dir)
-    {
-        $this->dir = $dir;
-        if (!file_exists($dir)) {
-            mkdir($dir, 0777, true);
+            return $pids;
+
+        } else {
+            $this->maxThreads = $threads;
+            return $this;
         }
-        return $this;
     }
 
     /**
-     * Set process ID (testing purposes)
-     * @param integer $pid
-     * @return static
-     * @deprecated
+     * Set (or get) subject
+     * @param string|null $subject
+     * @return static|string
+     */
+    public function subject($subject = null)
+    {
+        if ($subject) {
+            // Release previous subject
+            $this->releaseSubject();
+
+            $this->subject = $subject;
+            return $this;
+        } else {
+            return $this->subject;
+        }
+    }
+
+    /**
+     * Redefine process id (test purposes)
+     *
      * @internal
+     * @deprecated
+     * @param $pid
+     * @return $this
      */
     public function pid($pid)
     {
         $this->pid = $pid;
         return $this;
-    }
-
-    protected function sanitizeFilename($string)
-    {
-        // sanitize filename
-        $string = preg_replace(
-            '~
-        [<>:"/\\|?*]|            # file system reserved https://en.wikipedia.org/wiki/Filename#Reserved_characters_and_words
-        [\x00-\x1F]|             # control characters http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247%28v=vs.85%29.aspx
-        [\x7F\xA0\xAD]|          # non-printing characters DEL, NO-BREAK SPACE, SOFT HYPHEN
-        [#\[\]@!$&\'()+,;=]|     # URI reserved https://tools.ietf.org/html/rfc3986#section-2.2
-        [{}^\~`]                 # URL unsafe characters https://www.ietf.org/rfc/rfc1738.txt
-        ~x',
-            '-', $string);
-        // avoids ".", ".." or ".hiddenFiles"
-        $string = ltrim($string, '.-');
-        // optional beautification
-        //if ($beautify) $filename = beautify_filename($string);
-        // maximize filename length to 255 bytes http://serverfault.com/a/9548/44086
-        $ext = pathinfo($string, PATHINFO_EXTENSION);
-        $string = mb_strcut(pathinfo($string, PATHINFO_FILENAME), 0, 100 - ($ext ? strlen($ext) + 1 : 0), mb_detect_encoding($string)) . ($ext ? '.' . $ext : '');
-        return $string;
     }
 
     /**
@@ -155,41 +157,6 @@ class ProcessManager
         return false;
     }
 
-    /**
-     * Get listing of active threads
-     * @return integer[]|array
-     */
-    public function activeThreads()
-    {
-        $tmp = $this->threadLockFile();
-
-        if (!file_exists($tmp) || !($pids = file($tmp))) {
-            return [];
-        }
-
-        // trim crlf
-        $pids = array_map(function($pid) {
-            return (integer)$pid;
-        }, $pids);
-
-        // Keep only active
-        $pids = array_filter($pids, function ($pid) {
-            return $pid && $this->processExists($pid);
-        });
-
-        return $pids;
-    }
-
-    protected function threadLockFile()
-    {
-        return $this->dir . "/pm-{$this->queue}.loc";
-    }
-
-    protected function subjectLockFile()
-    {
-        return $this->dir . "/pm-{$this->queue}-{$this->subject}.loc";
-    }
-
     protected function subjectLockFileMask()
     {
         return $this->dir . "/pm-{$this->queue}-*.loc";
@@ -201,18 +168,17 @@ class ProcessManager
      */
     protected function lockThread()
     {
-        $pids = $this->activeThreads();
+        $threads = $this->threads();
 
-        if (in_array($this->pid, $pids)) {
+        if (in_array($this->pid, $threads)) {
             // already engaged (in case of changing subject)
             return true;
         }
 
-        $threadsRunning = count($pids);
-
-        if ($threadsRunning < $this->maxThreads) {
-            $pids[] = $this->pid;
-            return (boolean)file_put_contents($this->threadLockFile(), implode("\n", array_filter($pids)));
+        if (count($threads) < $this->maxThreads) {
+            // Add our pid to the list
+            $threads[] = $this->pid;
+            return $this->driver()->setThreads($this->queue, $threads);
         }
 
         return false;
@@ -220,20 +186,14 @@ class ProcessManager
 
     protected function releaseThread()
     {
-        $tmp = $this->threadLockFile();
+        $threads = $this->threads();
 
-        $pids = $this->activeThreads();
-
-        // Remove our pid from list
-        $pids = array_filter($pids, function ($pid) {
+        // Remove our pid from the list
+        $threads = array_filter($threads, function ($pid) {
             return $pid && $pid != $this->pid;
         });
 
-        if ($pids) {
-            file_put_contents($tmp, implode("\n", $pids));
-        } elseif (file_exists($tmp)) {
-            unlink($tmp);
-        }
+        $this->driver()->setThreads($this->queue, $threads);
     }
 
     /**
@@ -255,17 +215,14 @@ class ProcessManager
     {
         if ($this->subject) {
 
-            $tmp = $this->subjectLockFile();
+            $pid = $this->driver()->getThreadWithSubject($this->queue, $this->subject);
 
-            if (!file_exists($tmp)) {
-                return (boolean)file_put_contents($tmp, $this->pid);
-            }
-
-            $pid = file_get_contents($tmp);
-
-            if (!$this->processExists($pid)) {
+            if (!$pid || !$this->processExists($pid)) {
                 // snatch lock!
-                return (boolean)file_put_contents($tmp, $this->pid);
+                return $this->driver()->setThreadWithSubject($this->queue, $this->subject, $this->pid);
+            } elseif ($pid == $this->pid) {
+                // already engaged
+                return true;
             }
 
             return false;
@@ -278,10 +235,8 @@ class ProcessManager
     protected function releaseSubject()
     {
         if ($this->subject) {
-            $tmp = $this->subjectLockFile();
-
-            if (file_exists($tmp) && ($pid = file_get_contents($tmp)) && ($pid == $this->pid)) {
-                unlink($tmp);
+            if ($this->pid == $this->driver()->getThreadWithSubject($this->queue, $this->subject)) {
+                $this->driver()->unsetThreadWithSubject($this->queue, $this->subject);
             }
         }
     }
@@ -298,11 +253,11 @@ class ProcessManager
     protected function cleanup()
     {
         // Find and remove all subject lock files with dead processes
-        $mask = $this->subjectLockFileMask();
-        foreach (glob($mask) as $filename) {
-            $pid = file_get_contents($filename);
+
+        foreach ($this->driver()->getSubjects($this->queue) as $subject) {
+            $pid = $this->driver()->getThreadWithSubject($this->queue, $subject);
             if (!$this->processExists($pid)) {
-                unlink($filename);
+                $this->driver()->unsetThreadWithSubject($this->queue, $subject);
             }
         }
     }

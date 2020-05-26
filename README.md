@@ -98,12 +98,21 @@ and automatically release lock if process disappears.
 
 Even if your task running for hours — manager will watch it activity. 
 
-### Locks folder
+### Drivers
 
-By default manager keeps lock files in system temp directory, but you may redefine it.
+#### Filesystem
 
-```php
-ProcessManager::queue('converter')
-    // Define custom dir to store lock files
-    ->dir('/var/lock');
-```
+Used by default. Manager keeps lock files in system temp directory, but you may redefine it.
+
+    ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\FilesystemDriver(/* optional */ $loc_dir);
+
+#### Redis
+
+    ProcessManager::$driver = new \Cellard\ProcessManager\Drivers\RedisDriver(/* optional */ $predis_config);
+
+### Namespaces
+
+As manager store locks in Filesystem or in Redis keys, it is possible that different projects will use the same names.
+To prevent conflicts it is recommended to redefine manager's prefix.
+
+    ProcessManager::$prefix = 'your-project-name';
