@@ -29,7 +29,7 @@ abstract class DriverTest extends TestCase
         $this->driver->setThreads('name', []);
 
         $this->driver->setThreads('name', [$pid1, $pid2]);
-        $this->assertIsArray($this->driver->getThreads('name'));
+        $this->assertTrue(is_array($this->driver->getThreads('name')));
         $this->assertEquals(2, count($this->driver->getThreads('name')));
         $this->assertTrue(in_array($pid1, $this->driver->getThreads('name')));
         $this->assertTrue(in_array($pid2, $this->driver->getThreads('name')));
@@ -52,7 +52,7 @@ abstract class DriverTest extends TestCase
         $this->driver->setThreadWithSubject('name', 'subject-1', $pid1);
         $this->driver->setThreadWithSubject('name', 'subject-2', $pid2);
 
-        $this->assertIsArray($this->driver->getSubjects('name'));
+        $this->assertTrue(is_array($this->driver->getSubjects('name')));
         $this->assertTrue(in_array('subject-1', $this->driver->getSubjects('name')));
         $this->assertTrue(in_array('subject-2', $this->driver->getSubjects('name')));
 

@@ -30,7 +30,7 @@ class ProcessManagerTest extends TestCase
         return trim(file_get_contents($outputfile));
     }
     
-    protected function setUp(): void
+    protected function setUp()
     {
         parent::setUp();
 
@@ -66,7 +66,7 @@ class ProcessManagerTest extends TestCase
      */
     protected function assertThreads($count)
     {
-        $this->assertIsArray($this->pm->threads());
+        $this->assertTrue(is_array($this->pm->threads()));
         $this->assertEquals($count, count($this->pm->threads()));
     }
 

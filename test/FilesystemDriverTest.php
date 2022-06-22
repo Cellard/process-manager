@@ -5,7 +5,7 @@ use Cellard\ProcessManager\Drivers\FilesystemDriver;
 
 class FilesystemDriverTest extends DriverTest
 {
-    protected function setUp(): void
+    protected function setUp()
     {
         parent::setUp();
 

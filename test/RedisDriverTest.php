@@ -5,7 +5,7 @@ use Cellard\ProcessManager\Drivers\RedisDriver;
 
 class RedisDriverTest extends DriverTest
 {
-    protected function setUp(): void
+    protected function setUp()
     {
         parent::setUp();
 
